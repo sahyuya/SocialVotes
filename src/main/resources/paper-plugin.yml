@@ -1,0 +1,5 @@
+name: SocialVotes
+version: '1.0-SNAPSHOT'
+main: com.github.sahyuya.socialvotes.SocialVotes
+api-version: '1.21'
+authors: [ sahyuya ]
