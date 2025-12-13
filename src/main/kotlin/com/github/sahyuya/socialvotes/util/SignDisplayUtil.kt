@@ -62,4 +62,12 @@ object SignDisplayUtil {
             updateSingle(sign)
         }
     }
+
+    // 全看板を更新
+    fun updateAll() {
+        val dm = SocialVotes.dataManager
+        for (sign in dm.signById.values) {
+            updateSingle(sign)
+        }
+    }
 }

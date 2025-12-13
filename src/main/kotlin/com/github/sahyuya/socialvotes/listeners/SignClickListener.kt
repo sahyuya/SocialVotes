@@ -214,4 +214,9 @@ class SignClickListener : Listener {
             }
         }
     }
+    @EventHandler
+    fun onChat(e: AsyncPlayerChatEvent) {
+        DetailGUI.onChat(e.player, e.message)
+    }
+
 }

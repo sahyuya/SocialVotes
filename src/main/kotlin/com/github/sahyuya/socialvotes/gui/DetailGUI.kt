@@ -204,7 +204,9 @@ object DetailGUI {
 
             26 -> {
                 if (group == null) return
-                group.signIds.toList().forEach { dm.removeSignById(it) }
+                group.signIds.toList().forEach {
+                    dm.removeSignById(it)
+                }
                 dm.groupByName.remove(group.name)
                 dm.save()
                 p.closeInventory()

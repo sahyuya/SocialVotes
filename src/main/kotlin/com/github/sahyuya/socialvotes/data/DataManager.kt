@@ -2,6 +2,7 @@ package com.github.sahyuya.socialvotes.data
 
 import org.bukkit.Bukkit
 import org.bukkit.Location
+import org.bukkit.Material
 import org.bukkit.configuration.file.YamlConfiguration
 import org.bukkit.plugin.Plugin
 import java.io.File
@@ -218,17 +219,30 @@ class DataManager(private val plugin: Plugin) {
     }
 
     fun removeSignById(id: Int) {
-        val sign = signById.remove(id) ?: return
+        val sign = signById[id] ?: return
+        // ===== ワールド上の看板ブロックを削除 =====
+        val world = Bukkit.getWorld(sign.world)
+        if (world != null) {
+            val block = world.getBlockAt(sign.x, sign.y, sign.z)
+            if (block.type != Material.AIR) {
+                block.type = Material.AIR
+            }
+        }
+        // ===== locationToId から削除 =====
         locationToId.keys.removeIf {
             it.world.name == sign.world &&
                     it.blockX == sign.x &&
                     it.blockY == sign.y &&
                     it.blockZ == sign.z
         }
+        // ===== グループ紐付け解除 =====
         sign.group?.let { gName ->
             groupByName[gName]?.signIds?.remove(id)
         }
+        // ===== 投票データ削除 =====
         playerVotesPerSign.remove(id)
+        // ===== メインデータ削除 =====
+        signById.remove(id)
         save()
     }
 

@@ -1,7 +1,10 @@
 package com.github.sahyuya.socialvotes.commands
 
 import com.github.sahyuya.socialvotes.SocialVotes
+import com.github.sahyuya.socialvotes.data.DataManager
 import com.github.sahyuya.socialvotes.data.SVGroup
+import org.bukkit.Bukkit
+import org.bukkit.Material
 import org.bukkit.command.Command
 import org.bukkit.command.CommandExecutor
 import org.bukkit.command.CommandSender
@@ -106,14 +109,17 @@ class SvCommand : CommandExecutor {
                     sender.sendMessage("OP only.")
                     return true
                 }
-                val loc = (sender as Player).location.block.location
+                val loc = (sender).location.block.location
                 val sign = SocialVotes.dataManager.getSignAt(loc)
                 if (sign == null) {
                     sender.sendMessage("No SV sign at your location.")
                     return true
                 }
+
+                // データ削除
                 SocialVotes.dataManager.removeSignById(sign.id)
-                sender.sendMessage("Sign ${sign.id} removed (data + expected block removal).")
+
+                sender.sendMessage("Sign ${sign.id} removed.")
                 return true
             }
             "startvote" -> {
@@ -156,8 +162,8 @@ class SvCommand : CommandExecutor {
                     return true
                 }
 
-                group.signIds.forEach { id ->
-                    SocialVotes.dataManager.removeSignById(id)
+                group.signIds.toList().forEach {
+                    SocialVotes.dataManager.removeSignById(it)
                 }
 
                 SocialVotes.dataManager.groupByName.remove(args[1])
