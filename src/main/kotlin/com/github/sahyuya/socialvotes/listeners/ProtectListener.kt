@@ -6,7 +6,6 @@ import org.bukkit.block.data.type.*
 import org.bukkit.event.EventHandler
 import org.bukkit.event.Listener
 import org.bukkit.event.block.BlockBreakEvent
-import org.bukkit.util.Vector
 
 class ProtectListener : Listener {
 

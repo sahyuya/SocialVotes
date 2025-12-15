@@ -1,9 +1,12 @@
 package com.github.sahyuya.socialvotes.data
 
+import com.github.sahyuya.socialvotes.SocialVotes
 import org.bukkit.Bukkit
 import org.bukkit.Location
 import org.bukkit.Material
+import org.bukkit.block.Sign
 import org.bukkit.configuration.file.YamlConfiguration
+import org.bukkit.persistence.PersistentDataType
 import org.bukkit.plugin.Plugin
 import java.io.File
 import java.util.UUID
@@ -94,7 +97,8 @@ class DataManager(private val plugin: Plugin) {
                 showVotesGroup = sec.getBoolean("showVotesGroup", true),
                 sortMode = sec.getString("sortMode", "id")!!,
                 startTime = sec.getLong("startTime").takeIf { it >= 0 },
-                endTime = sec.getLong("endTime").takeIf { it >= 0 }
+                endTime = sec.getLong("endTime").takeIf { it >= 0 },
+                owner = UUID.fromString(sec.getString("owner"))
             )
             groupByName[name] = group
         }
@@ -158,6 +162,7 @@ class DataManager(private val plugin: Plugin) {
             yaml.set("$p.sortMode", g.sortMode)
             yaml.set("$p.startTime", g.startTime ?: -1)
             yaml.set("$p.endTime", g.endTime ?: -1)
+            yaml.set("$p.owner", g.owner.toString())
         }
 
         // playerVotes
@@ -213,6 +218,11 @@ class DataManager(private val plugin: Plugin) {
 
         signById[id] = sign
         locationToId[Location(loc.world, loc.blockX.toDouble(), loc.blockY.toDouble(), loc.blockZ.toDouble())] = id
+
+        val state = loc.block.state as? Sign
+        if (state != null) {
+            writeSignIdToBlock(state, id)
+        }
 
         save()
         return sign
@@ -271,5 +281,21 @@ class DataManager(private val plugin: Plugin) {
     fun getSignAt(loc: Location): SVSign? {
         val id = locationToId[loc] ?: return null
         return signById[id]
+    }
+
+    fun writeSignIdToBlock(sign: org.bukkit.block.Sign, id: Int) {
+        sign.persistentDataContainer.set(
+            SocialVotes.SV_SIGN_ID_KEY,
+            PersistentDataType.INTEGER,
+            id
+        )
+        sign.update(true)
+    }
+
+    fun readSignIdFromBlock(sign: org.bukkit.block.Sign): Int? {
+        return sign.persistentDataContainer.get(
+            SocialVotes.SV_SIGN_ID_KEY,
+            PersistentDataType.INTEGER
+        )
     }
 }

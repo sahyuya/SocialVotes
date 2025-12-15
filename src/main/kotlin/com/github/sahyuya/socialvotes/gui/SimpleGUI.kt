@@ -6,9 +6,9 @@ import com.github.sahyuya.socialvotes.util.TimeUtil
 import org.bukkit.Bukkit
 import org.bukkit.Material
 import org.bukkit.entity.Player
+import org.bukkit.event.inventory.InventoryType
 import org.bukkit.inventory.Inventory
 import org.bukkit.inventory.ItemStack
-import org.bukkit.inventory.meta.ItemMeta
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -31,9 +31,10 @@ object SimpleGUI {
         // ここで signID を保存する
         signViewMap[p.uniqueId] = sign.id
 
-        val inv: Inventory = Bukkit.createInventory(p, org.bukkit.event.inventory.InventoryType.HOPPER, "Simple Setting")
+        val inv: Inventory = Bukkit.createInventory(p, InventoryType.HOPPER, "Simple Setting")
 
-        val dateFormat = SimpleDateFormat("yyyy/MM/dd HH:mm")
+        val dm = SocialVotes.dataManager
+        val df = SimpleDateFormat("yyyy/MM/dd HH:mm")
 
         // slot0: 看板情報
         inv.setItem(
@@ -43,12 +44,10 @@ object SimpleGUI {
                 listOf(
                     "§f名前: §e${sign.name}",
                     "§f制作者: §b${sign.creator}",
-                    "§f作成日: §7${dateFormat.format(Date(sign.createdAt))}"
+                    "§f作成日: §7${df.format(Date(sign.createdAt))}"
                 )
             )
         )
-
-        val dm = SocialVotes.dataManager
 
         // slot1: グループ情報
         val group = sign.group?.let { dm.groupByName[it] }
@@ -63,20 +62,11 @@ object SimpleGUI {
 
             groupLore.add("§fあなたの残り票: §e$remain")
 
-            val start = group.startTime
-            val end = group.endTime
-
             groupLore.add("§f期間:")
-            if (start == null) groupLore.add(" §7開始未設定（常時可）")
-            else groupLore.add(" §7開始: §e${dateFormat.format(Date(start))}")
-
-            if (end == null) groupLore.add(" §7終了未設定（常時可）")
-            else groupLore.add(" §7終了: §e${dateFormat.format(Date(end))}")
-
+            groupLore.addAll(TimeUtil.formatPeriod(group.startTime, group.endTime))
         } else {
             groupLore.add("§cグループ未所属")
         }
-
         inv.setItem(1, item(Material.PAPER, "§bグループ情報", groupLore))
 
         // slot2: 自分の個別投票リセット
@@ -100,22 +90,19 @@ object SimpleGUI {
         )
 
         // slot4: 詳細設定
-        val canEdit = p.isOp || sign.creator.equals(p.name, ignoreCase = true)
-        val lore4 = if (canEdit) listOf("§eクリックで詳細設定へ") else listOf("§c権限がありません")
-
+        val canEdit = p.isOp || sign.creator.equals(p.name, true)
         inv.setItem(
             4,
             item(
                 Material.COMPARATOR,
                 "§6詳細設定",
-                lore4
+                if (canEdit) listOf("§eクリックで詳細設定へ") else listOf("§c権限がありません")
             )
         )
 
         p.openInventory(inv)
     }
 
-    // 追加：InventoryClickEvent で使用する Sign 取得
     fun getViewingSign(player: Player): SVSign? {
         val id = signViewMap[player.uniqueId] ?: return null
         return SocialVotes.dataManager.signById[id]
@@ -129,39 +116,35 @@ object SimpleGUI {
 
         when (slot) {
 
-            // -----------------------------
             // 個別リセット（slot 2）
-            // -----------------------------
             2 -> {
                 if (!TimeUtil.isVotePeriod(sign.group)) {
                     p.sendMessage("§c投票期間外のためリセットできません。")
                     return
                 }
-                val perSignMap = dm.playerVotesPerSign[sign.id] ?: mutableMapOf()
-                val usedOnSign = perSignMap.getOrDefault(uuid, 0)
+                val map = dm.playerVotesPerSign[sign.id] ?: mutableMapOf()
+                val used = map.getOrDefault(uuid, 0)
 
-                if (usedOnSign > 0) {
+                if (used > 0) {
                     // 看板の合計投票を減らす
-                    sign.votes = (sign.votes - usedOnSign).coerceAtLeast(0)
-
+                    sign.votes = (sign.votes - used).coerceAtLeast(0)
                     // 個別票をゼロに
-                    perSignMap[uuid] = 0
-                    dm.playerVotesPerSign[sign.id] = perSignMap
-
+                    map[uuid] = 0
+                    dm.playerVotesPerSign[sign.id] = map
                     // グループ所属時 → グループ票も減らす
                     sign.group?.let { gName ->
                         val gmap = dm.playerVotes[gName] ?: mutableMapOf()
                         val usedGroup = gmap.getOrDefault(uuid, 0)
-
-                        gmap[uuid] = (usedGroup - usedOnSign).coerceAtLeast(0)
+                        gmap[uuid] = (usedGroup - used).coerceAtLeast(0)
                         dm.playerVotes[gName] = gmap
                     }
                 }
                 dm.save()
                 updateSignDisplay(sign)
-
+                open(p, sign)
                 p.sendMessage("§a看板 ${sign.id} のあなたの個別投票をリセットしました。")
             }
+
             // -----------------------------
             // グループリセット（slot 3）
             // -----------------------------
@@ -169,7 +152,7 @@ object SimpleGUI {
                 if (!TimeUtil.isVotePeriod(sign.group)) {
                     p.sendMessage("§c投票期間外のためリセットできません。")
                     return
-                    }
+                }
                 val gName = sign.group ?: return
                 val group = dm.groupByName[gName] ?: return
 
@@ -181,34 +164,27 @@ object SimpleGUI {
                     p.sendMessage("§eグループ '$gName' のあなたの票はすでに0です。")
                     return
                 }
-
                 // ▼ グループ内全看板を処理
                 for (sid in group.signIds) {
-
                     val s = dm.signById[sid] ?: continue
                     val perSignMap = dm.playerVotesPerSign[sid] ?: mutableMapOf()
-
-                    val usedOnSign = perSignMap.getOrDefault(uuid, 0)
-                    if (usedOnSign > 0) {
-
+                    val usedSign = perSignMap.getOrDefault(uuid, 0)
+                    if (usedSign > 0) {
                         // ① 票減算
-                        s.votes = (s.votes - usedOnSign).coerceAtLeast(0)
-
+                        s.votes = (s.votes - usedSign).coerceAtLeast(0)
                         // ② プレイヤー票を0へ
                         perSignMap[uuid] = 0
                         dm.playerVotesPerSign[sid] = perSignMap
-
                         // ③ 表示更新
                         updateSignDisplay(s)
                     }
                 }
-
                 // ▼ グループ全体票も0に
                 gmap[uuid] = 0
                 dm.playerVotes[gName] = gmap
 
                 dm.save()
-
+                open(p, sign)
                 p.sendMessage("§aグループ '$gName' のあなたの票をリセットしました。")
             }
 

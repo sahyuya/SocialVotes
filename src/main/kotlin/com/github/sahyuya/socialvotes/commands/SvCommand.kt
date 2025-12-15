@@ -1,10 +1,7 @@
 package com.github.sahyuya.socialvotes.commands
 
 import com.github.sahyuya.socialvotes.SocialVotes
-import com.github.sahyuya.socialvotes.data.DataManager
 import com.github.sahyuya.socialvotes.data.SVGroup
-import org.bukkit.Bukkit
-import org.bukkit.Material
 import org.bukkit.command.Command
 import org.bukkit.command.CommandExecutor
 import org.bukkit.command.CommandSender
@@ -21,56 +18,60 @@ class SvCommand : CommandExecutor {
     ): Boolean {
 
         if (args.isEmpty()) {
-            sender.sendMessage("Usage: /sv <subcommand>")
+            sender.sendMessage("/sv <subcommand> の様に記述して下さい。")
             return true
         }
 
         when (args[0].lowercase(Locale.getDefault())) {
             "setgroup" -> {
                 if (sender !is Player) {
-                    sender.sendMessage("Only players can create groups.")
+                    sender.sendMessage("プレイヤーのみ実行できます。")
                     return true
                 }
                 if (args.size < 2) {
-                    sender.sendMessage("Usage: /sv setgroup <groupname>")
+                    sender.sendMessage("/sv setgroup <groupname> の用に記述して下さい。")
                     return true
                 }
                 val groupName = args[1]
                 val dm = SocialVotes.dataManager
                 if (dm.groupByName.containsKey(groupName)) {
-                    sender.sendMessage("Group already exists.")
+                    sender.sendMessage("既にそのグループは存在します。")
                     return true
                 }
-                val g = SVGroup(name = groupName)
+                val g = SVGroup(
+                    name = groupName,
+                    owner = sender.uniqueId
+                )
                 dm.groupByName[groupName] = g
                 dm.save()
-                sender.sendMessage("Group '$groupName' created. You are the admin (permission handling TBD).")
+
+                sender.sendMessage("投票グループ $groupName を作成し、オーナーになりました。")
                 return true
             }
             "add" -> {
                 if (sender !is Player) {
-                    sender.sendMessage("Only players.")
+                    sender.sendMessage("プレイヤーのみ実行できます。")
                     return true
                 }
                 if (args.size < 2) {
-                    sender.sendMessage("Usage: /sv add <groupname>")
+                    sender.sendMessage("/sv add <groupname> の様に記述して下さい。")
                     return true
                 }
                 val groupName = args[1]
                 val dm = SocialVotes.dataManager
                 val group = dm.groupByName[groupName]
                 if (group == null) {
-                    sender.sendMessage("Group not found.")
+                    sender.sendMessage("グループが見つかりません。")
                     return true
                 }
                 // put player into a temporary 'add mode' state
                 AddModeManager.watchPlayerForAdd(sender.uniqueId, groupName)
-                sender.sendMessage("Right-click a sign to add it to group '$groupName'. Right-click something else to cancel.")
+                sender.sendMessage("SV看板に右クリックをして $groupName に追加します。 その他ブロックをクリックすることで追加状態を解除します。")
                 return true
             }
             "remove" -> {
                 if (sender !is Player) {
-                    sender.sendMessage("Only players.")
+                    sender.sendMessage("プレイヤーのみ実行できます。")
                     return true
                 }
                 RemoveModeManager.watchPlayerForRemove(sender.uniqueId)
@@ -87,7 +88,7 @@ class SvCommand : CommandExecutor {
                     val group = args[1]
                     val g = dm.groupByName[group]
                     if (g == null) {
-                        sender.sendMessage("Group not found.")
+                        sender.sendMessage("グループが見つかりません。")
                         return true
                     }
                     sender.sendMessage("Signs in group '$group':")
@@ -102,63 +103,79 @@ class SvCommand : CommandExecutor {
             }
             "delhere" -> {
                 if (sender !is Player) {
-                    sender.sendMessage("Only players.")
+                    sender.sendMessage("プレイヤーのみ実行できます。")
                     return true
                 }
                 if (!sender.isOp) {
-                    sender.sendMessage("OP only.")
+                    sender.sendMessage("OPのみ実行できます。")
                     return true
                 }
                 val loc = (sender).location.block.location
                 val sign = SocialVotes.dataManager.getSignAt(loc)
                 if (sign == null) {
-                    sender.sendMessage("No SV sign at your location.")
+                    sender.sendMessage("この座標にSL看板はありません。")
                     return true
                 }
 
                 // データ削除
                 SocialVotes.dataManager.removeSignById(sign.id)
 
-                sender.sendMessage("Sign ${sign.id} removed.")
+                sender.sendMessage("SL看板 ${sign.id} を消去しました。")
                 return true
             }
             "startvote" -> {
-                // minimal implementation: set group to forced open by clearing startTime
-                if (args.size < 2) { sender.sendMessage("Usage: /sv startvote <groupname>"); return true }
-                val gName = args[1]
-                val dm = SocialVotes.dataManager
-                val g = dm.groupByName[gName]
-                if (g == null) { sender.sendMessage("No such group"); return true }
-                g.startTime = null
-                dm.save()
-                sender.sendMessage("Group $gName forced to start (startTime cleared).")
+                if (args.size < 2) {
+                    sender.sendMessage("/sv startvote <group> の様に記述して下さい。")
+                    return true
+                }
+                val g = SocialVotes.dataManager.groupByName[args[1]]
+                if (g == null) {
+                    sender.sendMessage("グループが見つかりません。")
+                    return true
+                }
+                val now = System.currentTimeMillis()
+                g.startTime = now
+                if (g.endTime != null && g.endTime!! <= now) {
+                    g.endTime = null
+                }
+                SocialVotes.dataManager.save()
+                sender.sendMessage("§a投票を開始しました。")
                 return true
             }
             "stopvote" -> {
-                if (args.size < 2) { sender.sendMessage("Usage: /sv stopvote <groupname>"); return true }
-                val gName = args[1]
-                val dm = SocialVotes.dataManager
-                val g = dm.groupByName[gName]
-                if (g == null) { sender.sendMessage("No such group"); return true }
-                g.endTime = System.currentTimeMillis()
-                dm.save()
-                sender.sendMessage("Group $gName forced to stop.")
+                if (args.size < 2) {
+                    sender.sendMessage("/sv stopvote <group> の様に記述して下さい。")
+                    return true
+                }
+                val g = SocialVotes.dataManager.groupByName[args[1]]
+                if (g == null) {
+                    sender.sendMessage("グループが見つかりません。")
+                    return true
+                }
+                val now = System.currentTimeMillis()
+                if (g.startTime == null || now < g.startTime!!) {
+                    sender.sendMessage("§c投票はまだ開始されていません。")
+                    return true
+                }
+                g.endTime = now
+                SocialVotes.dataManager.save()
+                sender.sendMessage("§a投票を終了しました。")
                 return true
             }
             "allclear" -> {
                 if (sender !is Player && !sender.isOp) {
-                    sender.sendMessage("OP only.")
+                    sender.sendMessage("OPのみ実行できます。")
                     return true
                 }
 
                 if (args.size < 2) {
-                    sender.sendMessage("Usage: /sv allclear <groupname>")
+                    sender.sendMessage("/sv allclear <groupname> の様に記述して下さい。")
                     return true
                 }
 
                 val group = SocialVotes.dataManager.groupByName[args[1]]
                 if (group == null) {
-                    sender.sendMessage("Group not found.")
+                    sender.sendMessage("グループが見つかりません。")
                     return true
                 }
 
@@ -169,12 +186,33 @@ class SvCommand : CommandExecutor {
                 SocialVotes.dataManager.groupByName.remove(args[1])
                 SocialVotes.dataManager.save()
 
-                sender.sendMessage("Group '${args[1]}' and its signs were completely removed.")
+                sender.sendMessage("グループ ${args[1]} と所属SL看板を全消去しました。")
+                return true
+            }
+            "help" -> {
+                if (sender !is Player) {
+                    sender.sendMessage("プレイヤーのみ実行できます。")
+                    return true
+                }
+                sender.sendMessage("§6--- SocialVotes Help ---")
+                sender.sendMessage("§e/sv list §7- グループ一覧")
+                sender.sendMessage("§e/sv add <group> §7- 看板をグループに追加")
+                sender.sendMessage("§e/sv remove §7- 看板をグループから除外")
+                sender.sendMessage("§e/sv startvote <group>")
+                sender.sendMessage("§e/sv stopvote <group>")
+
+                if (sender.isOp) {
+                    sender.sendMessage("§c/sv setgroup <name>")
+                    sender.sendMessage("§c/sv allclear <group>")
+                    sender.sendMessage("§c/sv delhere")
+                }
+
                 return true
             }
 
+
             else -> {
-                sender.sendMessage("Unknown subcommand.")
+                sender.sendMessage("存在しないコマンドです。")
                 return true
             }
         }

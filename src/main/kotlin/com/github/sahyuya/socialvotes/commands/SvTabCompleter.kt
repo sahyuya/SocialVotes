@@ -1,16 +1,24 @@
 package com.github.sahyuya.socialvotes.commands
 
 import com.github.sahyuya.socialvotes.SocialVotes
+import com.github.sahyuya.socialvotes.data.SVGroup
 import org.bukkit.command.Command
 import org.bukkit.command.CommandSender
 import org.bukkit.command.TabCompleter
+import org.bukkit.entity.Player
 
 class SvTabCompleter : TabCompleter {
 
-    private val subCommands = listOf(
-        "setgroup", "add", "remove",
-        "allclear", "delhere", "list",
-        "startvote", "stopvote"
+    private val baseCommands = listOf(
+        "setgroup", "add", "list", "help"
+    )
+
+    private val ownerCommands = listOf(
+        "remove", "startvote", "stopvote"
+    )
+
+    private val opCommands = listOf(
+        "allclear", "delhere"
     )
 
     override fun onTabComplete(
@@ -20,44 +28,57 @@ class SvTabCompleter : TabCompleter {
         args: Array<out String>
     ): MutableList<String> {
 
-        // /sv
+        val dm = SocialVotes.dataManager
+
+        // -------------------------
+        // /sv <tab>
+        // -------------------------
         if (args.size == 1) {
+
+            val list = mutableListOf<String>()
+            list += baseCommands
+
+            if (sender is Player) {
+                list += ownerCommands
+                if (sender.isOp) list += opCommands
+            }
+
             val input = args[0].lowercase()
-            return subCommands.filter { it.startsWith(input) }.toMutableList()
+            return list.filter { it.startsWith(input) }.sorted().toMutableList()
         }
 
-        // /sv add <group>
-        if (args.size == 2 && args[0].equals("add", true)) {
-            val input = args[1].lowercase()
-            return SocialVotes.dataManager.groupByName.keys
-                .filter { it.startsWith(input) }
-                .toMutableList()
-        }
+        // -------------------------
+        // /sv <cmd> <group>
+        // -------------------------
+        if (args.size == 2 && sender is Player) {
 
-        // /sv list <group>
-        if (args.size == 2 && args[0].equals("list", true)) {
             val input = args[1].lowercase()
-            return SocialVotes.dataManager.groupByName.keys
-                .filter { it.startsWith(input) }
-                .toMutableList()
-        }
 
-        // /sv startvote <group>
-        if (args.size == 2 && args[0].equals("startvote", true)) {
-            val input = args[1].lowercase()
-            return SocialVotes.dataManager.groupByName.keys
-                .filter { it.startsWith(input) }
-                .toMutableList()
-        }
+            val allowedGroups =
+                GroupPermissionUtil.ownedGroups(sender, dm.groupByName.values)
 
-        // /sv stopvote <group>
-        if (args.size == 2 && args[0].equals("stopvote", true)) {
-            val input = args[1].lowercase()
-            return SocialVotes.dataManager.groupByName.keys
-                .filter { it.startsWith(input) }
-                .toMutableList()
+            return when (args[0].lowercase()) {
+
+                "add", "startvote", "stopvote", "list" ->
+                    allowedGroups.map { it.name }
+                        .filter { it.startsWith(input) }
+                        .toMutableList()
+
+                "allclear" ->
+                    if (sender.isOp)
+                        dm.groupByName.keys.filter { it.startsWith(input) }.toMutableList()
+                    else mutableListOf()
+
+                else -> mutableListOf()
+            }
         }
 
         return mutableListOf()
+    }
+}
+object GroupPermissionUtil {
+    fun ownedGroups(player: Player, groups: Collection<SVGroup>): List<SVGroup> {
+        if (player.isOp) return groups.toList()
+        return groups.filter { it.owner == player.uniqueId }
     }
 }

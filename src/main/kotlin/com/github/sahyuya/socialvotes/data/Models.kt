@@ -22,25 +22,6 @@ data class SVSign(
         val w = Bukkit.getWorld(world) ?: return null
         return Location(w, x.toDouble(), y.toDouble(), z.toDouble())
     }
-
-    fun locationString(): String =
-        "$world:$x:$y:$z"
-
-    fun matchesPhysicalSign(bukkitSign: org.bukkit.block.Sign): Boolean {
-        val l1 = bukkitSign.getLine(1).replace("§", "")
-        val l2 = bukkitSign.getLine(2).replace("§", "")
-        val l3 = bukkitSign.getLine(3).replace("§", "")
-
-        val voteText = if (showVotes) {
-            "Votes: $votes"
-        } else {
-            "Votes: 非公開"
-        }
-
-        return l1.contains(name) &&
-                l2.contains(creator) &&
-                l3.contains(voteText)
-    }
 }
 
 data class SVGroup(
@@ -50,5 +31,6 @@ data class SVGroup(
     var showVotesGroup: Boolean = true,
     var sortMode: String = "id",
     var startTime: Long? = null,
-    var endTime: Long? = null
+    var endTime: Long? = null,
+    var owner: UUID
 )

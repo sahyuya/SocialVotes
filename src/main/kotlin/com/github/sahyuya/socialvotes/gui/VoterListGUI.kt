@@ -21,7 +21,6 @@ object VoterListGUI {
     private val pageMap = mutableMapOf<UUID, Int>()
     private val sortMap = mutableMapOf<UUID, SortMode>()
 
-
     private fun gray(): ItemStack =
         ItemStack(Material.GRAY_STAINED_GLASS_PANE).apply {
             itemMeta = itemMeta!!.apply { setDisplayName(" ") }
@@ -45,30 +44,13 @@ object VoterListGUI {
         pageMap[p.uniqueId] = page
         sortMap.putIfAbsent(p.uniqueId, SortMode.LATEST)
 
-        val inv: Inventory = Bukkit.createInventory(
-            p,
-            54,
-            "Voters"
-        )
-
+        val inv: Inventory = Bukkit.createInventory(p, 54, "Voters")
         val dm = SocialVotes.dataManager
+
         // ▼ 0票を除外した投票者マップ
         val rawMap = dm.playerVotesPerSign[sign.id]
             ?.filterValues { it > 0 }
             ?: emptyMap()
-        // 表示対象が0人なら早期表示
-        if (rawMap.isEmpty()) {
-            val inv = Bukkit.createInventory(p, 54, "Voters")
-            listOf(46, 47, 51, 52).forEach { inv.setItem(it, gray()) }
-            inv.setItem(
-                53,
-                ItemStack(Material.BARRIER).apply {
-                    itemMeta = itemMeta!!.apply { setDisplayName("§c戻る") }
-                }
-            )
-            p.openInventory(inv)
-            return
-        }
 
         /* ---------- ソート ---------- */
 
@@ -81,12 +63,12 @@ object VoterListGUI {
                     Bukkit.getOfflinePlayer(it.key).name ?: ""
                 }
 
-            else -> rawMap.entries.toList() // LATEST（保存順）
+            else -> rawMap.entries.toList() // LATEST
         }
 
         /* ---------- ページ補正 ---------- */
 
-        val maxPage = (sorted.size - 1) / 45
+        val maxPage = if (sorted.isEmpty()) 0 else (sorted.size - 1) / 45
         val safePage = page.coerceIn(0, maxPage)
         pageMap[p.uniqueId] = safePage
 
@@ -95,9 +77,11 @@ object VoterListGUI {
 
         /* ---------- 表示 ---------- */
 
-        for ((slot, entry) in sorted.subList(start, end).withIndex()) {
-            val off = Bukkit.getOfflinePlayer(entry.key)
-            inv.setItem(slot, head(off, entry.value))
+        if (sorted.isNotEmpty()) {
+            for ((slot, entry) in sorted.subList(start, end).withIndex()) {
+                val off = Bukkit.getOfflinePlayer(entry.key)
+                inv.setItem(slot, head(off, entry.value))
+            }
         }
 
         /* ---------- 下段装飾 ---------- */
@@ -106,21 +90,22 @@ object VoterListGUI {
             inv.setItem(it, gray())
         }
 
-        /* ---------- 操作 ---------- */
+        /* ---------- 操作（常に表示） ---------- */
 
         // ソート切替
         inv.setItem(
             45,
             ItemStack(Material.HOPPER).apply {
                 itemMeta = itemMeta!!.apply {
+                    val sort = sortMap[p.uniqueId] ?: SortMode.LATEST
                     setDisplayName(
-                        when (sortMap[p.uniqueId]) {
+                        when (sort) {
                             SortMode.LATEST -> "§e最新投票順"
                             SortMode.COUNT -> "§e投票数降順"
                             SortMode.NAME -> "§eプレイヤー名順"
-                            else -> ""
                         }
                     )
+
                 }
             }
         )
@@ -138,7 +123,7 @@ object VoterListGUI {
             49,
             ItemStack(Material.PAPER).apply {
                 itemMeta = itemMeta!!.apply {
-                    setDisplayName("§eページ ${page + 1}")
+                    setDisplayName("§eページ ${safePage + 1}")
                 }
             }
         )
@@ -155,9 +140,7 @@ object VoterListGUI {
         inv.setItem(
             53,
             ItemStack(Material.BARRIER).apply {
-                itemMeta = itemMeta!!.apply {
-                    setDisplayName("§c戻る")
-                }
+                itemMeta = itemMeta!!.apply { setDisplayName("§c戻る") }
             }
         )
 
@@ -205,7 +188,6 @@ object VoterListGUI {
                     open(p, sign, page + 1)
                 }
             }
-
 
             // 戻る
             53 -> {

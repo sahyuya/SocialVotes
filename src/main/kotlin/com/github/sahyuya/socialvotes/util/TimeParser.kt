@@ -1,61 +1,90 @@
 package com.github.sahyuya.socialvotes.util
 
 import com.github.sahyuya.socialvotes.SocialVotes
-import java.util.*
-import java.util.regex.Pattern
-import kotlin.math.max
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Date
 
 object TimeParser {
-    /**
-     * ユーザー指定フォーマット:
-     * 例: 2025y12m30d18h18min21s
-     * y: year, m: month, d: day, h: hour, min: minute, s: second
-     * 年・月・分・秒は任意、日と時は必須（仕様より）
-     *
-     * 簡易実装：不足分は現在日時から補完（仕様に合わせて拡張可能）
-     */
-    private val PATTERN = Pattern.compile("(\\d+)y|(\\d+)m|(\\d+)d|(\\d+)h|(\\d+)min|(\\d+)s")
 
-    fun parseSafe(input: String): Long? {
-        // A very permissive parser: extract numbers with suffixes
-        val cal = Calendar.getInstance()
-        // We will parse tokens like "2025y", "12m", "30d", "18h", "18min", "21s"
-        val regex = Regex("(\\d+)(y|m|d|h|min|s)")
-        val matches = regex.findAll(input)
-        var hasDay = false
-        var hasHour = false
-        for (m in matches) {
-            val num = m.groupValues[1].toInt()
+    private val TOKEN_REGEX = Regex("(\\d+)(y|m|d|h|min)")
+
+    fun parse(input: String): Long? {
+
+        val trimmed = input.trim()
+
+        // ---- クリア指定 ----
+        if (trimmed == "0") {
+            return -1L
+        }
+
+        val now = Calendar.getInstance()
+
+        var year: Int? = null
+        var month: Int? = null
+        var day: Int? = null
+        var hour: Int? = null
+        var minute: Int? = null
+
+        for (m in TOKEN_REGEX.findAll(trimmed)) {
+            val value = m.groupValues[1].toInt()
             when (m.groupValues[2]) {
-                "y" -> cal.set(Calendar.YEAR, num)
-                "m" -> cal.set(Calendar.MONTH, num - 1)
-                "d" -> { cal.set(Calendar.DAY_OF_MONTH, num); hasDay = true }
-                "h" -> { cal.set(Calendar.HOUR_OF_DAY, num); hasHour = true }
-                "min" -> cal.set(Calendar.MINUTE, num)
-                "s" -> cal.set(Calendar.SECOND, num)
+                "y" -> year = value
+                "m" -> month = value
+                "d" -> day = value
+                "h" -> hour = value
+                "min" -> minute = value
             }
         }
-        // requirement: day and hour must be specified
-        return if (hasDay && hasHour) cal.timeInMillis else null
+
+        // 必須チェック
+        if (day == null || hour == null) return null
+
+        val cal = Calendar.getInstance()
+        cal.clear()
+
+        cal.set(Calendar.YEAR, year ?: now.get(Calendar.YEAR))
+        cal.set(Calendar.MONTH, (month ?: (now.get(Calendar.MONTH) + 1)) - 1)
+        cal.set(Calendar.DAY_OF_MONTH, day)
+        cal.set(Calendar.HOUR_OF_DAY, hour)
+        cal.set(Calendar.MINUTE, minute ?: 0)
+        cal.set(Calendar.SECOND, 0)
+        cal.set(Calendar.MILLISECOND, 0)
+
+        return cal.timeInMillis
     }
 }
 
 object TimeUtil {
 
+    private val FORMAT = SimpleDateFormat("yyyy/MM/dd HH:mm")
+
+    fun format(time: Long?): String {
+        return if (time == null) {
+            "未設定（常時可）"
+        } else {
+            FORMAT.format(Date(time))
+        }
+    }
+
+    fun formatPeriod(start: Long?, end: Long?): List<String> {
+        return listOf(
+            if (start == null) " §7開始: 未設定（常時可）"
+            else " §7開始: §e${format(start)}",
+
+            if (end == null) " §7終了: 未設定（常時可）"
+            else " §7終了: §e${format(end)}"
+        )
+    }
     fun isVotePeriod(groupName: String?): Boolean {
-        if (groupName == null) return true // 所属なしは常時OK
-
-        val dm = SocialVotes.dataManager
-        val g = dm.groupByName[groupName] ?: return true
-
+        if (groupName == null) return true
+        val g = SocialVotes.dataManager.groupByName[groupName] ?: return true
         val now = System.currentTimeMillis()
 
-        g.startTime?.let {
-            if (now < it) return false
-        }
-        g.endTime?.let {
-            if (now >= it) return false
-        }
+        g.startTime?.let { if (now < it) return false }
+        g.endTime?.let { if (now >= it) return false }
+
         return true
     }
+
 }

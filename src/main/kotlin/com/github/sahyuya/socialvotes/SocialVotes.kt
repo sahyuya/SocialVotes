@@ -3,9 +3,9 @@ package com.github.sahyuya.socialvotes
 import com.github.sahyuya.socialvotes.commands.*
 import com.github.sahyuya.socialvotes.data.DataManager
 import com.github.sahyuya.socialvotes.listeners.*
+import org.bukkit.NamespacedKey
 import org.bukkit.command.*
 import org.bukkit.plugin.java.JavaPlugin
-import java.lang.reflect.Field
 
 class SocialVotes : JavaPlugin() {
 
@@ -14,22 +14,35 @@ class SocialVotes : JavaPlugin() {
             private set
         lateinit var dataManager: DataManager
             private set
-    }
-
-    override fun onLoad() {
-        instance = this
+        lateinit var SV_SIGN_ID_KEY: NamespacedKey
     }
 
     override fun onEnable() {
+
+        instance = this
+
+        SV_SIGN_ID_KEY = NamespacedKey(this, "sv_sign_id")
 
         dataManager = DataManager(this)
         dataManager.load()
 
         // --- Commands ---
-        registerCommand("socialvotes", SvCommand(), SvTabCompleter())
-        registerCommand("sv", SvCommand(), SvTabCompleter())
-        registerCommand("svupdate", SvUpdateCommand())
-        registerCommand("svtp", TpCommand())
+        registerPaperCommand(
+            name = "socialvotes",
+            aliases = listOf("sv"),
+            executor = SvCommand(),
+            tabCompleter = SvTabCompleter()
+        )
+
+        registerPaperCommand(
+            name = "svupdate",
+            executor = SvUpdateCommand()
+        )
+
+        registerPaperCommand(
+            name = "svtp",
+            executor = TpCommand()
+        )
 
         // --- Listeners ---
         server.pluginManager.registerEvents(SignCreateListener(), this)
@@ -47,13 +60,14 @@ class SocialVotes : JavaPlugin() {
         logger.info("SocialVotes disabled.")
     }
 
-    private fun registerCommand(
+    private fun registerPaperCommand(
         name: String,
+        aliases: List<String> = emptyList(),
         executor: CommandExecutor,
         tabCompleter: TabCompleter? = null
     ) {
 
-        val cmd = object : Command(name), TabCompleter {
+        val command = object : Command(name) {
 
             override fun execute(
                 sender: CommandSender,
@@ -63,24 +77,26 @@ class SocialVotes : JavaPlugin() {
                 return executor.onCommand(sender, this, label, args)
             }
 
-            override fun onTabComplete(
+            override fun tabComplete(
                 sender: CommandSender,
-                command: Command,
                 alias: String,
                 args: Array<out String>
             ): MutableList<String> {
-                return tabCompleter?.onTabComplete(sender, command, alias, args)?.toMutableList()
+                return tabCompleter
+                    ?.onTabComplete(sender, this, alias, args)
+                    ?.toMutableList()
                     ?: mutableListOf()
             }
         }
 
-        try {
-            val field: Field = server.javaClass.getDeclaredField("commandMap")
-            field.isAccessible = true
-            val map = field.get(server) as CommandMap
-            map.register(name, cmd)
-        } catch (ex: Exception) {
-            logger.severe("Failed to register command: $name")
-        }
+        command.aliases = aliases
+
+        val server = server
+        val field = server.javaClass.getDeclaredField("commandMap")
+        field.isAccessible = true
+        val commandMap = field.get(server) as CommandMap
+
+        commandMap.register(name, command)
     }
+
 }
