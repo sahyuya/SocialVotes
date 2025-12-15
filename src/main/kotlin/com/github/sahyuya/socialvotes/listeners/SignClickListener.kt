@@ -99,22 +99,43 @@ class SignClickListener : Listener {
         if (UpdateModeManager.isWatching(p.uniqueId)) {
             UpdateModeManager.cancel(p.uniqueId)
 
-            val sign = dm.getSignAt(loc)
-            if (sign == null) {
-                p.sendMessage("SV看板が存在しません。")
+            val clickedSign = state  // org.bukkit.block.Sign
+            val clickedLoc = block.location
+
+            // ① 表示内容から SVSign を特定
+            val svSign = dm.signById.values.firstOrNull {
+                it.matchesPhysicalSign(clickedSign)
+            }
+
+            if (svSign == null) {
+                p.sendMessage("§c一致するSV看板データが見つかりません。")
                 return
             }
 
-            dm.updateSignLocation(sign.id, loc)
-            p.sendMessage("SV看板の座標を更新しました。")
+            // ② 元の座標に看板が存在する場合は削除
+            val oldLoc = svSign.toLocation()
+            if (oldLoc != null) {
+                val oldBlock = oldLoc.block
+                if (oldBlock.state is Sign) {
+                    oldBlock.type = org.bukkit.Material.AIR
+                }
+            }
 
-            SignDisplayUtil.applyFormat(state, sign)
-            state.update(true)
+            // ③ 座標をクリックした看板へ更新
+            dm.updateSignLocation(svSign.id, clickedLoc)
+
+            p.sendMessage("§aSV看板(ID:${svSign.id})の座標を更新しました。")
+
+            // ④ 表示を正規化
+            SignDisplayUtil.applyFormat(clickedSign, svSign)
+            clickedSign.update(true)
+
             return
         }
 
+
         // ----------------------------
-        // 通常動作：ここから
+        // 通常動作
         // ----------------------------
 
         val sign = dm.getSignAt(loc) ?: return
