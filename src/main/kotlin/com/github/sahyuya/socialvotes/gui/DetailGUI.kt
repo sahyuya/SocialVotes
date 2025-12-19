@@ -4,6 +4,8 @@ import com.github.sahyuya.socialvotes.ChatInput
 import com.github.sahyuya.socialvotes.SocialVotes
 import com.github.sahyuya.socialvotes.data.SVSign
 import com.github.sahyuya.socialvotes.util.SignDisplayUtil
+import com.github.sahyuya.socialvotes.util.SignDisplayUtil.SVLOGO
+import com.github.sahyuya.socialvotes.util.SignDisplayUtil.SVLOGOSHORT
 import com.github.sahyuya.socialvotes.util.TimeUtil
 import org.bukkit.Bukkit
 import org.bukkit.Material
@@ -14,14 +16,6 @@ import java.util.*
 
 object DetailGUI {
     private val signViewMap: MutableMap<UUID, Int> = mutableMapOf()
-
-    enum class ChatAction {
-        RENAME_SIGN,
-        SET_SIGN_MAX,
-        SET_GROUP_MAX,
-        SET_START_TIME,
-        SET_END_TIME
-    }
 
     private fun item(mat: Material, name: String, lore: List<String> = listOf()): ItemStack {
         val it = ItemStack(mat)
@@ -35,11 +29,11 @@ object DetailGUI {
     fun open(p: Player, sign: SVSign) {
         signViewMap[p.uniqueId] = sign.id
 
-        val inv: Inventory = Bukkit.createInventory(null, 27, "SV 詳細設定")
+        val inv: Inventory = Bukkit.createInventory(p, 27, SVLOGOSHORT+"詳細設定GUI")
 
         // 戻る・遷移
-        inv.setItem(0, item(Material.ARROW, "§aシンプルGUIに戻る"))
-        inv.setItem(18, item(Material.BOOK, "§b投票結果GUIへ"))
+        inv.setItem(0, item(Material.BARRIER, "§c戻る"))
+        inv.setItem(18, item(Material.BOOK, "§b投票結果へ"))
 
         // 情報
         val signStatus = if (sign.showVotes) "§a公開" else "§c非公開"
@@ -79,7 +73,6 @@ object DetailGUI {
         inv.setItem(13, item(Material.GLOW_ITEM_FRAME, "§eグループ 得票公開切替"))
 
         // 設定
-        inv.setItem(5, item(Material.NAME_TAG, "§6看板名変更"))
         inv.setItem(3, item(Material.PAPER, "§6看板 最大投票数"))
         inv.setItem(12, item(Material.MAP, "§6グループ 最大投票数"))
         inv.setItem(21, item(Material.CLOCK, "§6開始時刻設定"))
@@ -98,7 +91,7 @@ object DetailGUI {
         val gray = item(Material.GRAY_STAINED_GLASS_PANE, " ")
 
         listOf(1,6,9,10,15,16,17,19,24).forEach { inv.setItem(it, white) }
-        listOf(14,20,23).forEach { inv.setItem(it, gray) }
+        listOf(5,14,20,23).forEach { inv.setItem(it, gray) }
 
         p.openInventory(inv)
     }
@@ -108,6 +101,10 @@ object DetailGUI {
         val dm = SocialVotes.dataManager
         val sign = dm.signById[signId] ?: return
         val group = sign.group?.let { dm.groupByName[it] }
+        // OP向け全体表示(不正防止)
+        val targets = mutableSetOf<Player>()
+        targets.addAll(Bukkit.getOnlinePlayers().filter { it.isOp })
+        targets.add(p)
 
         when (slot) {
 
@@ -140,20 +137,17 @@ object DetailGUI {
                 p.sendMessage("§aグループの得票公開を切り替えました。")
             }
 
-            5 -> startChat(p, signId, ChatAction.RENAME_SIGN,
-                "新しい看板名を入力してください（空白で変更なし）")
+            3 -> startChat(p, signId, ChatInput.Action.SET_SIGN_MAX,
+                "最大投票数を入力してください。（数字以外=変更なし）")
 
-            3 -> startChat(p, signId, ChatAction.SET_SIGN_MAX,
-                "最大投票数を入力してください（空白=変更なし / 0=制限なし）")
+            12 -> startChat(p, signId, ChatInput.Action.SET_GROUP_MAX,
+                "最大投票数を入力してください。（数字以外=変更なし）")
 
-            12 -> startChat(p, signId, ChatAction.SET_GROUP_MAX,
-                "最大投票数を入力してください（空白=変更なし / 0=制限なし）")
+            21 -> startChat(p, signId, ChatInput.Action.SET_START_TIME,
+                "開始時刻を入力してください。（0で変更なし）\n入力例:2025y12m31d23h59min(d,hの入力は必須)")
 
-            21 -> startChat(p, signId, ChatAction.SET_START_TIME,
-                "開始時刻を入力してください\n0=解除 / 空白=変更なし")
-
-            22 -> startChat(p, signId, ChatAction.SET_END_TIME,
-                "終了時刻を入力してください\n0=解除 / 空白=変更なし")
+            22 -> startChat(p, signId, ChatInput.Action.SET_END_TIME,
+                "終了時刻を入力してください。（0で変更なし）\n入力例:2025y12m31d23h59min(d,hの入力は必須)")
 
             7 -> {
                 // ① この看板の全投票を合計
@@ -180,7 +174,8 @@ object DetailGUI {
 
                 // ⑤ 表示更新
                 updateSignDisplay(sign)
-                p.sendMessage("§a看板 ${sign.id} の全プレイヤー投票をリセットしました。")
+                val message = SVLOGO+"${p.name}§eが§6「${sign.name}」(ID:${sign.id})§eの全プレイヤー投票をリセットしました。"
+                targets.forEach { it.sendMessage(message) }
             }
             8 -> {
                 if (group == null) return
@@ -202,13 +197,18 @@ object DetailGUI {
                 // ② グループ全体のプレイヤー票を全削除
                 dm.playerVotes.remove(gName)
                 dm.save()
-                p.sendMessage("§aグループ '$gName' の全プレイヤー投票をリセットしました。")
+                val message = SVLOGO+"${p.name}§eがグループ§6$gName§eの全プレイヤー投票をリセットしました。"
+                targets.forEach { it.sendMessage(message) }
             }
 
             25 -> {
+                val groupName = sign.group
                 dm.removeSignById(sign.id)
                 p.closeInventory()
-                p.sendMessage("§c看板を削除しました。")
+                val message = SVLOGO+"${p.name}§eが§6「${sign.name}」(ID:${sign.id})§eを消去しました。"
+                targets.forEach { it.sendMessage(message) }
+                // 所属SV看板が0になったら自動通知
+                dm.notifyIfAutoDelete(groupName.toString())
             }
             26 -> {
                 if (group == null) return
@@ -218,11 +218,13 @@ object DetailGUI {
                 dm.groupByName.remove(group.name)
                 dm.save()
                 p.closeInventory()
-                p.sendMessage("§4グループを完全削除しました。")
+                val message = SVLOGO+"${p.name}§eがグループ§6${group.name}§eと所属SV看板を消去しました。"
+                targets.forEach { it.sendMessage(message) }
+
             }
         }
     }
-    private fun startChat(p: Player, signId: Int, action: ChatAction, msg: String) {
+    private fun startChat(p: Player, signId: Int, action: ChatInput.Action, msg: String) {
         p.closeInventory()
         ChatInput.start(p.uniqueId, ChatInput.InputState(action, signId))
         msg.lines().forEach { p.sendMessage("§e$it") }

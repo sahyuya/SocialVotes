@@ -11,10 +11,24 @@ import java.util.UUID
 
 object ChatInput : Listener {
 
+    enum class Action {
+        // SimpleGUI
+        RENAME_SIGN,
+        SET_CREATOR_DISPLAY,
+        ADD_CREATOR,
+        REMOVE_CREATOR,
+        // DetailGUI
+        SET_SIGN_MAX,
+        SET_GROUP_MAX,
+        SET_START_TIME,
+        SET_END_TIME
+    }
+
     data class InputState(
-        val action: DetailGUI.ChatAction,
+        val action: Action,
         val signId: Int
     )
+
 
     /* =====================
        外部呼び出し用 API
@@ -50,7 +64,7 @@ object ChatInput : Listener {
             /* ---------------------
                看板名変更
                --------------------- */
-            DetailGUI.ChatAction.RENAME_SIGN -> {
+            Action.RENAME_SIGN -> {
                 if (msg.isBlank()) {
                     p.sendMessage("§c変更をキャンセルしました。")
                     return
@@ -67,9 +81,85 @@ object ChatInput : Listener {
             }
 
             /* ---------------------
+               制作者名変更
+               --------------------- */
+            Action.SET_CREATOR_DISPLAY -> {
+                sign.creatorDisplayName =
+                    msg.ifBlank { null }
+
+                dm.save()
+
+                Bukkit.getScheduler().runTask(SocialVotes.instance, Runnable {
+                    SignDisplayUtil.updateSingle(sign)
+                    p.sendMessage("§a制作者表示名を更新しました。")
+                })
+            }
+
+            /* ---------------------
+               作者追加
+               --------------------- */
+            Action.ADD_CREATOR -> {
+
+                if (msg.isBlank()) {
+                    p.sendMessage("§7変更は行われませんでした。")
+                    return
+                }
+
+                // プレイヤー名 → UUID 解決
+                val target = Bukkit.getOfflinePlayer(msg)
+                val uuid = target.uniqueId
+
+                if (target.name == null) {
+                    p.sendMessage("§cプレイヤー $msg は存在しません。")
+                    return
+                }
+
+                if (sign.creators.contains(uuid)) {
+                    p.sendMessage("§e${target.name} は既に投票対象に含まれています。")
+                    return
+                }
+
+                sign.creators.add(uuid)
+                dm.save()
+
+                Bukkit.getScheduler().runTask(
+                    SocialVotes.instance,
+                    Runnable {
+                        p.sendMessage("§a${target.name} を投票対象プレイヤーとして追加しました。")
+                    }
+                )
+            }
+
+            /* ---------------------
+               作者削除
+               --------------------- */
+            Action.REMOVE_CREATOR -> {
+                val target = Bukkit.getOfflinePlayer(msg)
+                val uuid = target.uniqueId
+
+                if (!sign.creators.contains(uuid)) {
+                    p.sendMessage("§cそのプレイヤーは制作者ではありません。")
+                    return
+                }
+
+                if (sign.creators.size <= 1) {
+                    p.sendMessage("§c制作者は最低1人必要です。")
+                    return
+                }
+
+                sign.creators.remove(uuid)
+                dm.save()
+
+                Bukkit.getScheduler().runTask(SocialVotes.instance, Runnable {
+                    SignDisplayUtil.updateSingle(sign)
+                    p.sendMessage("§a${target.name} を制作者から削除しました。")
+                })
+            }
+
+            /* ---------------------
                看板単体 最大投票数
                --------------------- */
-            DetailGUI.ChatAction.SET_SIGN_MAX -> {
+            Action.SET_SIGN_MAX -> {
                 val v = msg.toIntOrNull()
                 if (v == null || v <= 0) {
                     p.sendMessage("§7変更は行われませんでした。")
@@ -89,7 +179,7 @@ object ChatInput : Listener {
             /* ---------------------
                グループ全体 最大投票数
                --------------------- */
-            DetailGUI.ChatAction.SET_GROUP_MAX -> {
+            Action.SET_GROUP_MAX -> {
                 val groupName = sign.group
                 if (groupName == null) {
                     p.sendMessage("§cこの看板はグループに属していません。")
@@ -125,7 +215,7 @@ object ChatInput : Listener {
             /* ---------------------
                グループ　投票開始時刻
                --------------------- */
-            DetailGUI.ChatAction.SET_START_TIME -> {
+            Action.SET_START_TIME -> {
                 if (msg.isBlank()) return
                 group ?: return
                 if (msg == "0") {
@@ -145,7 +235,7 @@ object ChatInput : Listener {
             /* ---------------------
                グループ　投票終了時刻
                --------------------- */
-            DetailGUI.ChatAction.SET_END_TIME -> {
+            Action.SET_END_TIME -> {
                 if (msg.isBlank()) return
                 group ?: return
                 if (msg == "0") {
@@ -162,6 +252,5 @@ object ChatInput : Listener {
                 )
             }
         }
-        cancel(p.uniqueId)
     }
 }

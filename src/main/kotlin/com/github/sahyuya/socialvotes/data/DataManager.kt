@@ -1,11 +1,13 @@
 package com.github.sahyuya.socialvotes.data
 
 import com.github.sahyuya.socialvotes.SocialVotes
+import com.github.sahyuya.socialvotes.util.SignDisplayUtil.SVLOGO
 import org.bukkit.Bukkit
 import org.bukkit.Location
 import org.bukkit.Material
 import org.bukkit.block.Sign
 import org.bukkit.configuration.file.YamlConfiguration
+import org.bukkit.entity.Player
 import org.bukkit.persistence.PersistentDataType
 import org.bukkit.plugin.Plugin
 import java.io.File
@@ -21,10 +23,7 @@ class DataManager(private val plugin: Plugin) {
     // ============================================
 
     val signById: MutableMap<Int, SVSign> = mutableMapOf()
-
-    // 位置キーは Location（String ではない）
     val locationToId: MutableMap<Location, Int> = mutableMapOf()
-
     val groupByName: MutableMap<String, SVGroup> = mutableMapOf()
 
     // groupName -> (uuid -> count)
@@ -55,6 +54,16 @@ class DataManager(private val plugin: Plugin) {
 
             val sec = sSec.getConfigurationSection(idStr) ?: return@forEach
             val id = idStr.toInt()
+            val creators = sec.getStringList("creators")
+                .mapNotNull {
+                    runCatching { UUID.fromString(it) }.getOrNull()
+                }
+                .toMutableSet()
+
+            // 最低1人保証（安全策）
+            if (creators.isEmpty()) {
+                plugin.logger.warning("Sign $id has no valid creators.")
+            }
 
             val sign = SVSign(
                 id = id,
@@ -63,7 +72,8 @@ class DataManager(private val plugin: Plugin) {
                 y = sec.getInt("y"),
                 z = sec.getInt("z"),
                 name = sec.getString("name", "SVSign")!!,
-                creator = sec.getString("creator", "unknown")!!,
+                creators = creators,
+                creatorDisplayName = sec.getString("creatorDisplayName"),
                 votes = sec.getInt("votes", 0),
                 showVotes = sec.getBoolean("showVotes", true),
                 group = sec.getString("group", null),
@@ -93,12 +103,12 @@ class DataManager(private val plugin: Plugin) {
             val group = SVGroup(
                 name = name,
                 signIds = sec.getIntegerList("signIds").toMutableList(),
+                owner = UUID.fromString(sec.getString("owner")),
                 maxVotesPerPlayer = sec.getInt("maxVotesPerPlayer", 1),
                 showVotesGroup = sec.getBoolean("showVotesGroup", true),
                 sortMode = sec.getString("sortMode", "id")!!,
                 startTime = sec.getLong("startTime").takeIf { it >= 0 },
-                endTime = sec.getLong("endTime").takeIf { it >= 0 },
-                owner = UUID.fromString(sec.getString("owner"))
+                endTime = sec.getLong("endTime").takeIf { it >= 0 }
             )
             groupByName[name] = group
         }
@@ -145,7 +155,8 @@ class DataManager(private val plugin: Plugin) {
             yaml.set("$p.y", s.y)
             yaml.set("$p.z", s.z)
             yaml.set("$p.name", s.name)
-            yaml.set("$p.creator", s.creator)
+            yaml.set("$p.creators", s.creators.map { it.toString() })
+            yaml.set("$p.creatorDisplayName", s.creatorDisplayName)
             yaml.set("$p.votes", s.votes)
             yaml.set("$p.showVotes", s.showVotes)
             yaml.set("$p.group", s.group)
@@ -157,12 +168,12 @@ class DataManager(private val plugin: Plugin) {
         groupByName.forEach { (name, g) ->
             val p = "groups.$name"
             yaml.set("$p.signIds", g.signIds)
+            yaml.set("$p.owner", g.owner.toString())
             yaml.set("$p.maxVotesPerPlayer", g.maxVotesPerPlayer)
             yaml.set("$p.showVotesGroup", g.showVotesGroup)
             yaml.set("$p.sortMode", g.sortMode)
             yaml.set("$p.startTime", g.startTime ?: -1)
             yaml.set("$p.endTime", g.endTime ?: -1)
-            yaml.set("$p.owner", g.owner.toString())
         }
 
         // playerVotes
@@ -204,7 +215,7 @@ class DataManager(private val plugin: Plugin) {
     // Sign Operations
     // ============================================
 
-    fun registerSign(loc: Location, name: String, creator: String): SVSign {
+    fun registerSign(loc: Location, name: String, creators: UUID): SVSign {
         val id = nextId()
         val sign = SVSign(
             id = id,
@@ -213,7 +224,7 @@ class DataManager(private val plugin: Plugin) {
             y = loc.blockY,
             z = loc.blockZ,
             name = name,
-            creator = creator
+            creators = mutableSetOf(creators)
         )
 
         signById[id] = sign
@@ -283,7 +294,7 @@ class DataManager(private val plugin: Plugin) {
         return signById[id]
     }
 
-    fun writeSignIdToBlock(sign: org.bukkit.block.Sign, id: Int) {
+    fun writeSignIdToBlock(sign: Sign, id: Int) {
         sign.persistentDataContainer.set(
             SocialVotes.SV_SIGN_ID_KEY,
             PersistentDataType.INTEGER,
@@ -292,10 +303,25 @@ class DataManager(private val plugin: Plugin) {
         sign.update(true)
     }
 
-    fun readSignIdFromBlock(sign: org.bukkit.block.Sign): Int? {
+    fun readSignIdFromBlock(sign: Sign): Int? {
         return sign.persistentDataContainer.get(
             SocialVotes.SV_SIGN_ID_KEY,
             PersistentDataType.INTEGER
         )
     }
+
+    fun notifyIfAutoDelete(groupName: String) {
+        val dm = SocialVotes.dataManager
+        val group = dm.groupByName[groupName] ?: return
+        if (group.signIds.isNotEmpty()) return
+        dm.groupByName.remove(groupName)
+        playerVotes.remove(groupName)
+        dm.save()
+        val message = SVLOGO+"§eグループ§6${group.name}§eは所属SV看板がなくなったため自動削除されました。"
+        val targets = mutableSetOf<Player>()
+        Bukkit.getOnlinePlayers().filter { it.isOp }.forEach { targets.add(it) }
+        Bukkit.getPlayer(group.owner)?.let { targets.add(it) }
+        targets.forEach { it.sendMessage(message) }
+    }
+
 }

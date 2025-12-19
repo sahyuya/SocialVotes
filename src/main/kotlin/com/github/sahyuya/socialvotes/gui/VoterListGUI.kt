@@ -2,6 +2,7 @@ package com.github.sahyuya.socialvotes.gui
 
 import com.github.sahyuya.socialvotes.SocialVotes
 import com.github.sahyuya.socialvotes.data.SVSign
+import com.github.sahyuya.socialvotes.util.SignDisplayUtil.SVLOGOSHORT
 import org.bukkit.Bukkit
 import org.bukkit.Material
 import org.bukkit.OfflinePlayer
@@ -44,7 +45,7 @@ object VoterListGUI {
         pageMap[p.uniqueId] = page
         sortMap.putIfAbsent(p.uniqueId, SortMode.LATEST)
 
-        val inv: Inventory = Bukkit.createInventory(p, 54, "Voters")
+        val inv: Inventory = Bukkit.createInventory(p, 54, SVLOGOSHORT+"投票者一覧")
         val dm = SocialVotes.dataManager
 
         // ▼ 0票を除外した投票者マップ
@@ -105,7 +106,6 @@ object VoterListGUI {
                             SortMode.NAME -> "§eプレイヤー名順"
                         }
                     )
-
                 }
             }
         )

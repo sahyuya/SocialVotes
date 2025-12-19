@@ -1,12 +1,14 @@
 package com.github.sahyuya.socialvotes.gui
 
+import com.github.sahyuya.socialvotes.ChatInput
 import com.github.sahyuya.socialvotes.SocialVotes
 import com.github.sahyuya.socialvotes.data.SVSign
+import com.github.sahyuya.socialvotes.util.SignDisplayUtil
+import com.github.sahyuya.socialvotes.util.SignDisplayUtil.SVLOGOSHORT
 import com.github.sahyuya.socialvotes.util.TimeUtil
 import org.bukkit.Bukkit
 import org.bukkit.Material
 import org.bukkit.entity.Player
-import org.bukkit.event.inventory.InventoryType
 import org.bukkit.inventory.Inventory
 import org.bukkit.inventory.ItemStack
 import java.text.SimpleDateFormat
@@ -28,28 +30,34 @@ object SimpleGUI {
 
     fun open(p: Player, sign: SVSign) {
 
-        // ここで signID を保存する
+        // ここで見ている signID を保存する
         signViewMap[p.uniqueId] = sign.id
-
-        val inv: Inventory = Bukkit.createInventory(p, InventoryType.HOPPER, "Simple Setting")
+        val inv: Inventory = Bukkit.createInventory(null, 27, SVLOGOSHORT+"簡易GUI")
 
         val dm = SocialVotes.dataManager
         val df = SimpleDateFormat("yyyy/MM/dd HH:mm")
 
-        // slot0: 看板情報
+        val creatorLore = mutableListOf<String>()
+        creatorLore.add("§f制作者:")
+        sign.creators.forEach { uuid ->
+            val name = Bukkit.getOfflinePlayer(uuid).name ?: uuid.toString()
+            creatorLore.add(" §7- §b$name")
+        }
+
+        // 看板情報
         inv.setItem(
-            0, item(
+            9, item(
                 Material.OAK_SIGN,
                 "§a看板情報",
                 listOf(
-                    "§f名前: §e${sign.name}",
-                    "§f制作者: §b${sign.creator}",
+                    "§f名前: §e${sign.name}"
+                ) + creatorLore + listOf(
                     "§f作成日: §7${df.format(Date(sign.createdAt))}"
                 )
             )
         )
 
-        // slot1: グループ情報
+        // グループ情報
         val group = sign.group?.let { dm.groupByName[it] }
         val groupLore = mutableListOf<String>()
 
@@ -57,9 +65,7 @@ object SimpleGUI {
             groupLore.add("§f所属グループ: §a${group.name}")
 
             val pv = dm.playerVotes[group.name]?.get(p.uniqueId) ?: 0
-            val max = group.maxVotesPerPlayer
-            val remain = if (max <= 0) "∞" else "${max - pv}"
-
+            val remain = group.maxVotesPerPlayer - pv
             groupLore.add("§fあなたの残り票: §e$remain")
 
             groupLore.add("§f期間:")
@@ -67,38 +73,89 @@ object SimpleGUI {
         } else {
             groupLore.add("§cグループ未所属")
         }
-        inv.setItem(1, item(Material.PAPER, "§bグループ情報", groupLore))
+        inv.setItem(10, item(Material.PAPER, "§bグループ情報", groupLore))
 
-        // slot2: 自分の個別投票リセット
+        // 看板名変更
+        val isCreator = sign.creators.contains(p.uniqueId)
+        val canCreatorEdit = isCreator || p.isOp
         inv.setItem(
-            2,
-            item(
-                Material.REDSTONE,
-                "§c個別投票リセット",
-                listOf("§7この看板に対する自分の投票数を0に戻す")
+            11, item(
+                Material.KNOWLEDGE_BOOK,
+                "§e看板名変更",
+                if (canCreatorEdit)
+                    listOf("§7クリックで名前を変更")
+                else
+                    listOf("§c制作者のみ操作可能")
             )
         )
 
-        // slot3: グループ投票リセット
+        // 制作者名変更
         inv.setItem(
-            3,
-            item(
+            12, item(
+                Material.WRITABLE_BOOK,
+                "§e制作者表示名変更",
+                if (canCreatorEdit)
+                    listOf("§7クリックで制作者欄の表示名を変更")
+                else
+                    listOf("§c制作者のみ操作可能")
+            )
+        )
+
+        // 制作者追加
+        inv.setItem(
+            13, item(
+                Material.NAME_TAG,
+                "§a制作者プレイヤー追加",
+                if (canCreatorEdit)
+                    listOf("§7mcid をチャット入力")
+                else
+                    listOf("§c制作者のみ操作可能")
+            )
+        )
+
+        // 制作者削除
+        inv.setItem(
+            14, item(
+                Material.STRUCTURE_VOID,
+                "§c制作者削除",
+                listOf("§7mcid をチャット入力")
+            )
+        )
+
+        // 自分の個別投票リセット
+        inv.setItem(
+            15, item(
+                Material.REDSTONE,
+                "§c個別投票リセット",
+                listOf("§7この看板への自分の投票数を0に戻す")
+            )
+        )
+
+        // グループ投票リセット
+        inv.setItem(
+            16, item(
                 Material.GUNPOWDER,
                 "§cグループ投票リセット",
                 listOf("§7所属グループの自分の票を0に戻す")
             )
         )
-
-        // slot4: 詳細設定
-        val canEdit = p.isOp || sign.creator.equals(p.name, true)
+        // 詳細設定
         inv.setItem(
-            4,
-            item(
+            17, item(
                 Material.COMPARATOR,
                 "§6詳細設定",
-                if (canEdit) listOf("§eクリックで詳細設定へ") else listOf("§c権限がありません")
+                when{
+                    group == null -> listOf("§cグループに登録されていません")
+                    !p.isOp && group.owner != p.uniqueId -> listOf("§c権限がありません")
+                    else -> listOf("§eクリックで詳細設定へ")
+                }
             )
         )
+
+        // 装飾
+        val white = item(Material.WHITE_STAINED_GLASS_PANE, " ")
+        for (i in 0..8) { inv.setItem(i, white) }
+        for (i in 18..26) { inv.setItem(i, white) }
 
         p.openInventory(inv)
     }
@@ -113,11 +170,81 @@ object SimpleGUI {
         val sign = getViewingSign(p) ?: return
         val dm = SocialVotes.dataManager
         val uuid = p.uniqueId
+        val isCreator = sign.creators.contains(uuid)
+        val canCreatorEdit = isCreator || p.isOp
 
         when (slot) {
 
-            // 個別リセット（slot 2）
-            2 -> {
+            // 看板名変更
+            11 -> {
+                if (!canCreatorEdit) {
+                    p.sendMessage("§c制作者またはOPのみ操作できます。")
+                    return
+                }
+                ChatInput.start(
+                    uuid,
+                    ChatInput.InputState(
+                        ChatInput.Action.RENAME_SIGN,
+                        sign.id
+                    )
+                )
+                p.closeInventory()
+                p.sendMessage("§e新しい看板名をチャットで入力してください。")
+            }
+
+            // 制作者表示名変更
+            12 -> {
+                if (!canCreatorEdit) {
+                    p.sendMessage("§c制作者またはOPのみ操作できます。")
+                    return
+                }
+                ChatInput.start(
+                    uuid,
+                    ChatInput.InputState(
+                        ChatInput.Action.SET_CREATOR_DISPLAY,
+                        sign.id
+                    )
+                )
+                p.closeInventory()
+                p.sendMessage("§e新しい制作者表示名を入力してください。")
+            }
+
+            // 制作者追加
+            13 -> {
+                if (!canCreatorEdit) {
+                    p.sendMessage("§c制作者またはOPのみ操作できます。")
+                    return
+                }
+                ChatInput.start(
+                    uuid,
+                    ChatInput.InputState(
+                        ChatInput.Action.ADD_CREATOR,
+                        sign.id
+                    )
+                )
+                p.closeInventory()
+                p.sendMessage("§e追加するプレイヤーの mcid を入力してください。\n（JEプレイヤーはTabを押すことで候補が出てきます）")
+            }
+
+            // 制作者削除
+            14 -> {
+                if (!canCreatorEdit) {
+                    p.sendMessage("§c制作者またはOPのみ操作できます。")
+                    return
+                }
+                ChatInput.start(
+                    uuid,
+                    ChatInput.InputState(
+                        ChatInput.Action.REMOVE_CREATOR,
+                        sign.id
+                    )
+                )
+                p.closeInventory()
+                p.sendMessage("§e削除する制作者の mcid を入力してください。\n（JEプレイヤーはTabを押すことで候補が出てきます）")
+            }
+
+            // 個別看板リセット
+            15 -> {
                 if (!TimeUtil.isVotePeriod(sign.group)) {
                     p.sendMessage("§c投票期間外のためリセットできません。")
                     return
@@ -145,10 +272,8 @@ object SimpleGUI {
                 p.sendMessage("§a看板 ${sign.id} のあなたの個別投票をリセットしました。")
             }
 
-            // -----------------------------
-            // グループリセット（slot 3）
-            // -----------------------------
-            3 -> {
+            // 個別グループリセット
+            16 -> {
                 if (!TimeUtil.isVotePeriod(sign.group)) {
                     p.sendMessage("§c投票期間外のためリセットできません。")
                     return
@@ -161,7 +286,7 @@ object SimpleGUI {
 
                 val usedGroup = gmap.getOrDefault(uuid, 0)
                 if (usedGroup <= 0) {
-                    p.sendMessage("§eグループ '$gName' のあなたの票はすでに0です。")
+                    p.sendMessage("§eグループ $gName のあなたの票はすでに0です。")
                     return
                 }
                 // ▼ グループ内全看板を処理
@@ -185,16 +310,13 @@ object SimpleGUI {
 
                 dm.save()
                 open(p, sign)
-                p.sendMessage("§aグループ '$gName' のあなたの票をリセットしました。")
+                p.sendMessage("§aグループ $gName のあなたの票をリセットしました。")
             }
 
-            // -----------------------------
-            // 詳細設定（slot 4）
-            // -----------------------------
-            4 -> {
-                val canEdit = p.isOp || sign.creator.equals(p.name, true)
-                if (!canEdit) {
-                    p.sendMessage("§c権限がありません。")
+            // 詳細設定
+            17 -> {
+                val group = sign.group?.let { dm.groupByName[it] }
+                if (group == null || (!p.isOp && group.owner != uuid)) {
                     return
                 }
                 DetailGUI.open(p, sign)
@@ -208,7 +330,7 @@ object SimpleGUI {
         val state = block.state
         if (state !is org.bukkit.block.Sign) return
 
-        com.github.sahyuya.socialvotes.util.SignDisplayUtil.applyFormat(state, sign)
+        SignDisplayUtil.applyFormat(state, sign)
         state.update(true)
     }
 }

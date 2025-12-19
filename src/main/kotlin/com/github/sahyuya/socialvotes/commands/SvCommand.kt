@@ -2,6 +2,11 @@ package com.github.sahyuya.socialvotes.commands
 
 import com.github.sahyuya.socialvotes.SocialVotes
 import com.github.sahyuya.socialvotes.data.SVGroup
+import com.github.sahyuya.socialvotes.util.SignDisplayUtil.SVLOGO
+import net.kyori.adventure.text.Component
+import net.kyori.adventure.text.event.ClickEvent
+import net.kyori.adventure.text.event.HoverEvent
+import org.bukkit.Bukkit
 import org.bukkit.command.Command
 import org.bukkit.command.CommandExecutor
 import org.bukkit.command.CommandSender
@@ -18,22 +23,22 @@ class SvCommand : CommandExecutor {
     ): Boolean {
 
         if (args.isEmpty()) {
-            sender.sendMessage("/sv <subcommand> の様に記述して下さい。")
+            sender.sendMessage("/sv <subcommand>")
+            return true
+        }
+        if (sender !is Player) {
+            sender.sendMessage("プレイヤーのみ実行できます。")
             return true
         }
 
+        val dm = SocialVotes.dataManager
         when (args[0].lowercase(Locale.getDefault())) {
             "setgroup" -> {
-                if (sender !is Player) {
-                    sender.sendMessage("プレイヤーのみ実行できます。")
-                    return true
-                }
                 if (args.size < 2) {
-                    sender.sendMessage("/sv setgroup <groupname> の用に記述して下さい。")
+                    sender.sendMessage("/sv setgroup <groupname>")
                     return true
                 }
                 val groupName = args[1]
-                val dm = SocialVotes.dataManager
                 if (dm.groupByName.containsKey(groupName)) {
                     sender.sendMessage("既にそのグループは存在します。")
                     return true
@@ -48,17 +53,13 @@ class SvCommand : CommandExecutor {
                 sender.sendMessage("投票グループ $groupName を作成し、オーナーになりました。")
                 return true
             }
+
             "add" -> {
-                if (sender !is Player) {
-                    sender.sendMessage("プレイヤーのみ実行できます。")
-                    return true
-                }
                 if (args.size < 2) {
-                    sender.sendMessage("/sv add <groupname> の様に記述して下さい。")
+                    sender.sendMessage("/sv add <groupname>")
                     return true
                 }
                 val groupName = args[1]
-                val dm = SocialVotes.dataManager
                 val group = dm.groupByName[groupName]
                 if (group == null) {
                     sender.sendMessage("グループが見つかりません。")
@@ -66,24 +67,20 @@ class SvCommand : CommandExecutor {
                 }
                 // put player into a temporary 'add mode' state
                 AddModeManager.watchPlayerForAdd(sender.uniqueId, groupName)
-                sender.sendMessage("SV看板に右クリックをして $groupName に追加します。 その他ブロックをクリックすることで追加状態を解除します。")
+                sender.sendMessage("SV看板を右クリックすることで $groupName に追加します。")
                 return true
             }
+
             "remove" -> {
-                if (sender !is Player) {
-                    sender.sendMessage("プレイヤーのみ実行できます。")
-                    return true
-                }
                 RemoveModeManager.watchPlayerForRemove(sender.uniqueId)
-                sender.sendMessage("Right-click a registered SV sign to remove it from its group.")
+                sender.sendMessage("SV看板を右クリックすることでグループから除外します。")
                 return true
             }
+
             "list" -> {
-                val dm = SocialVotes.dataManager
                 if (args.size == 1) {
-                    // list groups
-                    sender.sendMessage("Groups:")
-                    dm.groupByName.keys.forEach { sender.sendMessage(" - $it") }
+                    sender.sendMessage("§7--- グループ一覧 ---")
+                    dm.groupByName.keys.forEach { sender.sendMessage("§7・§b$it") }
                 } else {
                     val group = args[1]
                     val g = dm.groupByName[group]
@@ -91,46 +88,62 @@ class SvCommand : CommandExecutor {
                         sender.sendMessage("グループが見つかりません。")
                         return true
                     }
-                    sender.sendMessage("Signs in group '$group':")
+                    sender.sendMessage("§7--- グループ§b${group}§7の看板一覧 ---")
                     g.signIds.forEach { id ->
-                        val s = dm.signById[id]
-                        if (s != null) {
-                            sender.sendMessage("ID: ${s.id} - ${s.name} (座標(x,y,z)：${s.x} ${s.y} ${s.z} world=${s.world})")
-                        }
+                        val s = dm.signById[id] ?: return@forEach
+                        val line = Component.text()
+                            .append(Component.text("§7ID:§6${s.id}§7「§a${s.name}§7」座標：${s.x} ${s.y} ${s.z} world=${s.world}"))
+                            .clickEvent(
+                                ClickEvent.runCommand("/svtp ${s.id}")
+                            )
+                            .hoverEvent(
+                                HoverEvent.showText(
+                                    Component.text("§bクリックでこのSV看板へテレポート")
+                                )
+                            )
+                            .build()
+                        sender.sendMessage(line)
                     }
                 }
                 return true
             }
+
             "delhere" -> {
-                if (sender !is Player) {
-                    sender.sendMessage("プレイヤーのみ実行できます。")
-                    return true
-                }
                 if (!sender.isOp) {
                     sender.sendMessage("OPのみ実行できます。")
                     return true
                 }
                 val loc = (sender).location.block.location
-                val sign = SocialVotes.dataManager.getSignAt(loc)
+                val sign = dm.getSignAt(loc)
                 if (sign == null) {
                     sender.sendMessage("この座標にSL看板はありません。")
                     return true
                 }
-
+                val groupName = sign.group
                 // データ削除
-                SocialVotes.dataManager.removeSignById(sign.id)
+                dm.removeSignById(sign.id)
 
-                sender.sendMessage("SL看板 ${sign.id} を消去しました。")
+                val message = SVLOGO+"${sender.name}§eが§6「${sign.name}」(ID:${sign.id})§eを消去しました。"
+                val targets = mutableSetOf<Player>()
+                targets.addAll(Bukkit.getOnlinePlayers().filter { it.isOp })
+                targets.add(sender)
+                targets.forEach { it.sendMessage(message) }
+                groupName?.let { dm.notifyIfAutoDelete(it) }
                 return true
             }
+
             "startvote" -> {
                 if (args.size < 2) {
-                    sender.sendMessage("/sv startvote <group> の様に記述して下さい。")
+                    sender.sendMessage("/sv startvote <group>")
                     return true
                 }
-                val g = SocialVotes.dataManager.groupByName[args[1]]
+                val g = dm.groupByName[args[1]]
                 if (g == null) {
                     sender.sendMessage("グループが見つかりません。")
+                    return true
+                }
+                if (!sender.isOp && g.owner != sender.uniqueId) {
+                    sender.sendMessage("§cこの操作はグループ作成者またはOPのみ可能です。")
                     return true
                 }
                 val now = System.currentTimeMillis()
@@ -138,18 +151,23 @@ class SvCommand : CommandExecutor {
                 if (g.endTime != null && g.endTime!! <= now) {
                     g.endTime = null
                 }
-                SocialVotes.dataManager.save()
+                dm.save()
                 sender.sendMessage("§a投票を開始しました。")
                 return true
             }
+
             "stopvote" -> {
                 if (args.size < 2) {
-                    sender.sendMessage("/sv stopvote <group> の様に記述して下さい。")
+                    sender.sendMessage("/sv stopvote <group>")
                     return true
                 }
-                val g = SocialVotes.dataManager.groupByName[args[1]]
+                val g = dm.groupByName[args[1]]
                 if (g == null) {
                     sender.sendMessage("グループが見つかりません。")
+                    return true
+                }
+                if (!sender.isOp && g.owner != sender.uniqueId) {
+                    sender.sendMessage("§cこの操作はグループオーナーのみ可能です。")
                     return true
                 }
                 val now = System.currentTimeMillis()
@@ -158,46 +176,44 @@ class SvCommand : CommandExecutor {
                     return true
                 }
                 g.endTime = now
-                SocialVotes.dataManager.save()
+                dm.save()
                 sender.sendMessage("§a投票を終了しました。")
                 return true
             }
+
             "allclear" -> {
-                if (sender !is Player && !sender.isOp) {
+                if (!sender.isOp) {
                     sender.sendMessage("OPのみ実行できます。")
                     return true
                 }
-
                 if (args.size < 2) {
-                    sender.sendMessage("/sv allclear <groupname> の様に記述して下さい。")
+                    sender.sendMessage("/sv allclear <groupname>")
                     return true
                 }
-
-                val group = SocialVotes.dataManager.groupByName[args[1]]
+                val group = dm.groupByName[args[1]]
                 if (group == null) {
                     sender.sendMessage("グループが見つかりません。")
                     return true
                 }
-
                 group.signIds.toList().forEach {
-                    SocialVotes.dataManager.removeSignById(it)
+                    dm.removeSignById(it)
                 }
+                dm.groupByName.remove(args[1])
+                dm.save()
 
-                SocialVotes.dataManager.groupByName.remove(args[1])
-                SocialVotes.dataManager.save()
-
-                sender.sendMessage("グループ ${args[1]} と所属SL看板を全消去しました。")
+                val message = SVLOGO+"${sender.name}§eがグループ§6${args[1]}§eと所属SV看板を消去しました。"
+                val targets = mutableSetOf<Player>()
+                targets.addAll(Bukkit.getOnlinePlayers().filter { it.isOp })
+                targets.add(sender)
+                targets.forEach { it.sendMessage(message) }
                 return true
             }
+
             "help" -> {
-                if (sender !is Player) {
-                    sender.sendMessage("プレイヤーのみ実行できます。")
-                    return true
-                }
                 sender.sendMessage("§6--- SocialVotes Help ---")
-                sender.sendMessage("§e/sv list §7- グループ一覧")
-                sender.sendMessage("§e/sv add <group> §7- 看板をグループに追加")
-                sender.sendMessage("§e/sv remove §7- 看板をグループから除外")
+                sender.sendMessage("§e/sv list")
+                sender.sendMessage("§e/sv add <group>")
+                sender.sendMessage("§e/sv remove")
                 sender.sendMessage("§e/sv startvote <group>")
                 sender.sendMessage("§e/sv stopvote <group>")
 
@@ -206,10 +222,8 @@ class SvCommand : CommandExecutor {
                     sender.sendMessage("§c/sv allclear <group>")
                     sender.sendMessage("§c/sv delhere")
                 }
-
                 return true
             }
-
 
             else -> {
                 sender.sendMessage("存在しないコマンドです。")

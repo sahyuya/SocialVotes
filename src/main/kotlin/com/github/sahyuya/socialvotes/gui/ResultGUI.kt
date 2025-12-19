@@ -2,6 +2,7 @@ package com.github.sahyuya.socialvotes.gui
 
 import com.github.sahyuya.socialvotes.SocialVotes
 import com.github.sahyuya.socialvotes.data.SVSign
+import com.github.sahyuya.socialvotes.util.SignDisplayUtil.SVLOGOSHORT
 import org.bukkit.Bukkit
 import org.bukkit.Material
 import org.bukkit.entity.Player
@@ -34,11 +35,7 @@ object ResultGUI {
         viewMap[p.uniqueId] = sign.id
         sortModeMap.putIfAbsent(p.uniqueId, SortMode.REGISTER)
 
-        val inv: Inventory = Bukkit.createInventory(
-            p,
-            54,
-            "Vote Results"
-        )
+        val inv: Inventory = Bukkit.createInventory(p, 54, SVLOGOSHORT+"投票結果")
 
         val dm = SocialVotes.dataManager
         val groupName = sign.group
@@ -79,24 +76,23 @@ object ResultGUI {
         // ソート切替
         inv.setItem(
             45,
-            item(
-                Material.HOPPER,
-                "§bソート切替",
-                listOf(
-                    "§7現在:",
-                    "§e${sortModeMap[p.uniqueId]}"
-                )
-            )
+            ItemStack(Material.HOPPER).apply {
+                itemMeta = itemMeta!!.apply {
+                    val sort = sortModeMap[p.uniqueId] ?: SortMode.REGISTER
+                    setDisplayName(
+                        when (sort) {
+                            SortMode.REGISTER -> "§e登録順"
+                            SortMode.VOTES_DESC -> "§e投票数降順"
+                            SortMode.NAME -> "§eSV看板名順"
+                            SortMode.ID -> "§eID名順"
+                        }
+                    )
+                }
+            }
         )
 
         // 戻る
-        inv.setItem(
-            53,
-            item(
-                Material.ARROW,
-                "§a詳細設定へ戻る"
-            )
-        )
+        inv.setItem(53, item(Material.BARRIER, "§c戻る"))
 
         p.openInventory(inv)
     }

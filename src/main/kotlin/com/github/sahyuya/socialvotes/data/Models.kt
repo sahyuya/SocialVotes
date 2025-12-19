@@ -11,7 +11,8 @@ data class SVSign(
     var y: Int,
     var z: Int,
     var name: String,
-    var creator: String,
+    var creators: MutableSet<UUID> = mutableSetOf(),
+    var creatorDisplayName: String? = null,
     var votes: Int = 0,
     var showVotes: Boolean = true,
     var group: String? = null,
@@ -27,10 +28,10 @@ data class SVSign(
 data class SVGroup(
     var name: String,
     var signIds: MutableList<Int> = mutableListOf(),
+    var owner: UUID,
     var maxVotesPerPlayer: Int = 1,
     var showVotesGroup: Boolean = true,
     var sortMode: String = "id",
     var startTime: Long? = null,
-    var endTime: Long? = null,
-    var owner: UUID
+    var endTime: Long? = null
 )

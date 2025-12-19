@@ -6,39 +6,41 @@ import com.github.sahyuya.socialvotes.commands.RemoveModeManager
 import com.github.sahyuya.socialvotes.commands.UpdateModeManager
 import com.github.sahyuya.socialvotes.gui.*
 import com.github.sahyuya.socialvotes.util.SignDisplayUtil
+import com.github.sahyuya.socialvotes.util.SignDisplayUtil.SVLOGOSHORT
 import org.bukkit.Material
+import org.bukkit.Sound
 import org.bukkit.block.Sign
 import org.bukkit.entity.Player
 import org.bukkit.event.EventHandler
 import org.bukkit.event.Listener
-import org.bukkit.event.block.Action
 import org.bukkit.event.inventory.InventoryClickEvent
-import org.bukkit.event.player.AsyncPlayerChatEvent
 import org.bukkit.event.player.PlayerInteractEvent
 
 class SignClickListener : Listener {
 
     @EventHandler
     fun onClick(e: PlayerInteractEvent) {
-
-        if (e.action != Action.RIGHT_CLICK_BLOCK) return
-
         val p = e.player
         val block = e.clickedBlock ?: return
-        val state = block.state as? Sign ?: return
         val dm = SocialVotes.dataManager
+        val clicked = e.clickedBlock ?: return
+        val state = clicked.state as? Sign
+
+        if (state == null) {
+            cancelAllModesIfActive(p)
+            return
+        }
+        val signId = dm.readSignIdFromBlock(state)
+        if (signId == null) {
+            cancelAllModesIfActive(p)
+            return
+        }
 
         // ==================================================
         // Add モード
         // ==================================================
-        AddModeManager.getGroupIfWatching(p.uniqueId)?.let { groupName ->
-            AddModeManager.cancel(p.uniqueId)
-
-            val signId = dm.readSignIdFromBlock(state)
-            if (signId == null) {
-                p.sendMessage("SV看板ではありません。")
-                return
-            }
+        if (AddModeManager.isWatching(p.uniqueId)) {
+            val groupName = AddModeManager.getGroup(p.uniqueId) ?: return
 
             val sign = dm.signById[signId] ?: run {
                 p.sendMessage("SV看板データが存在しません。")
@@ -64,7 +66,7 @@ class SignClickListener : Listener {
             sign.group = groupName
             dm.save()
 
-            p.sendMessage("ID:${sign.id} をグループ $groupName に追加しました。")
+            p.sendMessage("「${sign.name}」(ID:${sign.id}) をグループ $groupName に追加しました。")
             SignDisplayUtil.applyFormat(state, sign)
             state.update(true)
             return
@@ -74,13 +76,6 @@ class SignClickListener : Listener {
         // Remove モード
         // ==================================================
         if (RemoveModeManager.isWatching(p.uniqueId)) {
-            RemoveModeManager.cancel(p.uniqueId)
-
-            val signId = dm.readSignIdFromBlock(state)
-            if (signId == null) {
-                p.sendMessage("SV看板ではありません。")
-                return
-            }
 
             val sign = dm.signById[signId] ?: run {
                 p.sendMessage("SV看板データが存在しません。")
@@ -94,11 +89,7 @@ class SignClickListener : Listener {
 
             val group = dm.groupByName[groupName] ?: return
 
-            // 権限チェック
-            val isOp = p.isOp
-            val isCreator = group.owner == p.uniqueId
-
-            if (!isOp && !isCreator) {
+            if (!p.isOp && group.owner != p.uniqueId) {
                 p.sendMessage("この操作はグループ作成者またはOPのみ可能です。")
                 return
             }
@@ -107,7 +98,7 @@ class SignClickListener : Listener {
             group.signIds.remove(sign.id)
             dm.save()
 
-            p.sendMessage("ID:${sign.id} をグループから除外しました。")
+            p.sendMessage("「${sign.name}」(ID:${sign.id}) をグループから除外しました。")
             SignDisplayUtil.applyFormat(state, sign)
             state.update(true)
             return
@@ -117,13 +108,6 @@ class SignClickListener : Listener {
         // Update モード
         // ==================================================
         if (UpdateModeManager.isWatching(p.uniqueId)) {
-            UpdateModeManager.cancel(p.uniqueId)
-
-            val signId = dm.readSignIdFromBlock(state)
-            if (signId == null) {
-                p.sendMessage("SV看板ではありません。")
-                return
-            }
 
             val svSign = dm.signById[signId] ?: return
 
@@ -136,7 +120,7 @@ class SignClickListener : Listener {
             // 新看板にID再付与
             dm.writeSignIdToBlock(state, signId)
 
-            p.sendMessage("SV看板(ID:$signId) の座標を更新しました。")
+            p.sendMessage("「${svSign.name}」(ID:${signId}) の座標を更新しました。")
 
             SignDisplayUtil.applyFormat(state, svSign)
             state.update(true)
@@ -146,7 +130,6 @@ class SignClickListener : Listener {
         // ==================================================
         // 通常動作
         // ==================================================
-        val signId = dm.readSignIdFromBlock(state) ?: return
         val sign = dm.signById[signId] ?: return
 
         // Shift + 右クリック → GUI
@@ -160,28 +143,42 @@ class SignClickListener : Listener {
         // ----------------------------
         val uuid = p.uniqueId
         val now = System.currentTimeMillis()
+        val group = sign.group?.let { dm.groupByName[it] }
 
-        sign.group?.let { gName ->
-            val g = dm.groupByName[gName]
-            g?.startTime?.let { if (now < it) { p.sendMessage("投票期間外（開始前）。"); return } }
-            g?.endTime?.let { if (now >= it) { p.sendMessage("投票期間外（終了）。"); return } }
-        }
-
-        val perSignMap = dm.playerVotesPerSign.computeIfAbsent(sign.id) { mutableMapOf() }
-        val usedOnSign = perSignMap.getOrDefault(uuid, 0)
-
-        if (sign.maxVotesPerSign != 0 && usedOnSign >= sign.maxVotesPerSign) {
-            p.sendMessage("この看板への投票上限に到達しています。")
+        if (sign.creators.contains(uuid)) {
+            p.sendActionBar("自身が作成したSV看板には投票できません。")
             return
         }
 
         sign.group?.let { gName ->
             val g = dm.groupByName[gName]
-            val gmap = dm.playerVotes.computeIfAbsent(gName) { mutableMapOf() }
+            g?.startTime?.let { if (now < it) { p.sendActionBar("投票期間外です（開始前）"); return } }
+            g?.endTime?.let { if (now >= it) { p.sendActionBar("投票期間外です（終了）"); return } }
+        }
+
+        val perSignMap = dm.playerVotesPerSign.computeIfAbsent(sign.id) { mutableMapOf() }
+        val usedOnSign = perSignMap.getOrDefault(uuid, 0)
+
+        // 看板上限処理
+        val effectiveSignLimit = when {
+            group != null && group.maxVotesPerPlayer > 0 && sign.maxVotesPerSign > 0 ->
+                minOf(sign.maxVotesPerSign, group.maxVotesPerPlayer)
+            sign.maxVotesPerSign > 0 ->
+                sign.maxVotesPerSign
+            else -> null
+        }
+
+        if (effectiveSignLimit != null && usedOnSign >= effectiveSignLimit) {
+            p.sendActionBar("この看板への投票上限に到達しています")
+            return
+        }
+
+        if (group != null && group.maxVotesPerPlayer > 0) {
+            val gmap = dm.playerVotes.computeIfAbsent(group.name) { mutableMapOf() }
             val usedInGroup = gmap.getOrDefault(uuid, 0)
 
-            if (g != null && g.maxVotesPerPlayer != 0 && usedInGroup >= g.maxVotesPerPlayer) {
-                p.sendMessage("このグループでの投票上限に到達しています。")
+            if (usedInGroup >= group.maxVotesPerPlayer) {
+                p.sendActionBar("このグループでの投票上限に到達しています")
                 return
             }
 
@@ -192,8 +189,8 @@ class SignClickListener : Listener {
         sign.votes++
 
         dm.save()
-
-        p.sendMessage("ID:${sign.id} に投票しました。現在票数：${sign.votes}")
+        p.playSound(p.location, Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 1.0f, 1.2f)
+        p.sendActionBar("§a「${sign.name}」(ID:${sign.id})に投票しました！")
         SignDisplayUtil.applyFormat(state, sign)
         state.update(true)
     }
@@ -207,10 +204,25 @@ class SignClickListener : Listener {
         val top = e.view.topInventory
 
         when (e.view.title) {
-            "Simple Setting" -> { if (e.rawSlot < top.size) { e.isCancelled = true; SimpleGUI.onClick(p, e.rawSlot) } }
-            "SV 詳細設定" -> { if (e.rawSlot < top.size) { e.isCancelled = true; DetailGUI.onClick(p, e.rawSlot) } }
-            "Vote Results" -> { e.isCancelled = true; ResultGUI.onClick(p, e.rawSlot) }
-            "Voters" -> { e.isCancelled = true; VoterListGUI.onClick(p, e.rawSlot) }
+            SVLOGOSHORT+"簡易GUI" -> { if (e.rawSlot < top.size) { e.isCancelled = true; SimpleGUI.onClick(p, e.rawSlot) } }
+            SVLOGOSHORT+"詳細設定GUI" -> { if (e.rawSlot < top.size) { e.isCancelled = true; DetailGUI.onClick(p, e.rawSlot) } }
+            SVLOGOSHORT+"投票結果" -> { e.isCancelled = true; ResultGUI.onClick(p, e.rawSlot) }
+            SVLOGOSHORT+"投票者一覧" -> { e.isCancelled = true; VoterListGUI.onClick(p, e.rawSlot) }
         }
     }
+
+    private fun cancelAllModesIfActive(p: Player, notify: Boolean = true) {
+        val wasActive =
+            AddModeManager.isWatching(p.uniqueId) ||
+            RemoveModeManager.isWatching(p.uniqueId) ||
+            UpdateModeManager.isWatching(p.uniqueId)
+        if (!wasActive) return
+        AddModeManager.cancel(p.uniqueId)
+        RemoveModeManager.cancel(p.uniqueId)
+        UpdateModeManager.cancel(p.uniqueId)
+        if (notify) {
+            p.sendMessage("SV看板以外をクリックしたため、操作状態を解除しました。")
+        }
+    }
+
 }

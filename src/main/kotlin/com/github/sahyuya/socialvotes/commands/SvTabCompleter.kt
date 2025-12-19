@@ -76,6 +76,7 @@ class SvTabCompleter : TabCompleter {
         return mutableListOf()
     }
 }
+
 object GroupPermissionUtil {
     fun ownedGroups(player: Player, groups: Collection<SVGroup>): List<SVGroup> {
         if (player.isOp) return groups.toList()

@@ -15,17 +15,26 @@ object SignDisplayUtil {
      * ============================== */
     private fun buildLines(sv: SVSign): List<Component> {
 
-        val title = Component.text("(")
-            .color(NamedTextColor.DARK_GRAY)
-            .append(Component.text("Social", NamedTextColor.AQUA))
-            .append(Component.text("Votes", NamedTextColor.GRAY))
-            .append(Component.text(")", NamedTextColor.DARK_GRAY))
+        val title =
+            Component.text(SVLOGO)
+
+        val creatorLine = when {
+            sv.creatorDisplayName != null ->
+                Component.text(sv.creatorDisplayName!!, NamedTextColor.WHITE)
+            sv.creators.size == 1 -> {
+                val uuid = sv.creators.first()
+                val name = Bukkit.getOfflinePlayer(uuid).name ?: "unknown"
+                Component.text(name, NamedTextColor.WHITE)
+            }
+            else ->
+                Component.text("制作者多数", NamedTextColor.WHITE)
+        }
 
         val isVisible = sv.showVotes
 
         val votesLine =
             if (isVisible)
-                Component.text("Votes: ", NamedTextColor.YELLOW)
+                Component.text("Votes: ", NamedTextColor.GRAY)
                     .append(Component.text("${sv.votes}", NamedTextColor.GOLD))
             else
                 Component.text("Votes: 非公開", NamedTextColor.RED)
@@ -33,7 +42,7 @@ object SignDisplayUtil {
         return listOf(
             title,
             Component.text(sv.name, NamedTextColor.GREEN),
-            Component.text(sv.creator, NamedTextColor.WHITE),
+            creatorLine,
             votesLine
         )
     }
@@ -66,4 +75,9 @@ object SignDisplayUtil {
             dm.signById[sid]?.let { updateSingle(it) }
         }
     }
+    /* ==============================
+     * SocialVotes LOGO
+     * ============================== */
+    const val SVLOGO = "§8(§bSocial§7Votes§8)§f"
+    const val SVLOGOSHORT = "§8(§bS§7V§8)"
 }

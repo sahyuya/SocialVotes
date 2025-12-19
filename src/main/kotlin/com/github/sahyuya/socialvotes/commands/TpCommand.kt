@@ -15,7 +15,7 @@ class TpCommand : CommandExecutor {
         }
 
         if (args.isEmpty()) {
-            sender.sendMessage("Usage: /svtp <id>")
+            sender.sendMessage("/svtp <id>")
             return true
         }
 
