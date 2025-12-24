@@ -144,10 +144,10 @@ object DetailGUI {
                 "最大投票数を入力してください。（数字以外=変更なし）")
 
             21 -> startChat(p, signId, ChatInput.Action.SET_START_TIME,
-                "開始時刻を入力してください。（0で変更なし）\n入力例:2025y12m31d23h59min(d,hの入力は必須)")
+                "開始時刻を入力してください。（0でリセット）\n入力例:2025y12M31d23h59min(d,hの入力は必須)")
 
             22 -> startChat(p, signId, ChatInput.Action.SET_END_TIME,
-                "終了時刻を入力してください。（0で変更なし）\n入力例:2025y12m31d23h59min(d,hの入力は必須)")
+                "終了時刻を入力してください。（0でリセット）\n入力例:2025y12M31d23h59min(d,hの入力は必須)")
 
             7 -> {
                 // ① この看板の全投票を合計

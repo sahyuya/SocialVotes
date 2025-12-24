@@ -35,7 +35,7 @@ object SimpleGUI {
         val inv: Inventory = Bukkit.createInventory(null, 27, SVLOGOSHORT+"簡易GUI")
 
         val dm = SocialVotes.dataManager
-        val df = SimpleDateFormat("yyyy/MM/dd HH:mm")
+        val df = SimpleDateFormat("yyyy/MM/dd HH:mm").apply { timeZone = TimeZone.getTimeZone("Asia/Tokyo") }
 
         val creatorLore = mutableListOf<String>()
         creatorLore.add("§f制作者:")
