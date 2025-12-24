@@ -125,6 +125,7 @@ object ChatInput : Listener {
                 Bukkit.getScheduler().runTask(
                     SocialVotes.instance,
                     Runnable {
+                        SignDisplayUtil.updateSingle(sign)
                         p.sendMessage("§a${target.name} を投票対象プレイヤーとして追加しました。")
                     }
                 )
